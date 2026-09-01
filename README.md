@@ -152,4 +152,77 @@ function speakText() {
 </script>
 
 </body>
-</html>I
+</html>
+LinguaFlow — Language Translation Tool
+A modern, responsive web-based language translation tool built with Python, Flask, HTML, CSS and JavaScript. It lets users enter text, choose source and target languages, and receive a translated result through the Google translation service used by deep-translator.
+✨ Features
+🌍 Translate between 18+ languages
+🔎 Auto-detect source language
+⚡ Simple AJAX translation without page reload
+📱 Responsive modern UI
+🔢 5,000-character input limit
+🔄 Swap source and target languages
+📋 Easy-to-copy translated result
+🎨 Clean card-based interface
+❌ Friendly error handling
+🛠️ Tech Stack
+Python 3
+Flask
+deep-translator
+HTML5
+CSS3
+JavaScript (Fetch API)
+📁 Project Structure
+language_translation_tool/
+├── app.py
+├── requirements.txt
+├── README.md
+├── screenshots/
+│   └── .gitkeep
+├── templates/
+│   └── index.html
+└── static/
+    ├── style.css
+    └── script.js
+🚀 Installation
+1. Clone the repository
+git clone https://github.com/YOUR_USERNAME/language-translation-tool.git
+cd language-translation-tool
+2. Create a virtual environment (recommended)
+Windows:
+python -m venv venv
+venv\Scripts\activate
+macOS/Linux:
+python3 -m venv venv
+source venv/bin/activate
+3. Install dependencies
+pip install -r requirements.txt
+4. Run the application
+python app.py
+Open http://127.0.0.1:5000 in your browser.
+📸 Screenshots
+Add your screenshots to the screenshots/ folder and update the paths below:
+Home Page
+�
+Translation Result
+�
+Tip: Take screenshots after running the project locally. This keeps the README honest and shows your own working application.
+🧪 Example
+Input: Hello, how are you?
+Target: Hindi
+Output: नमस्ते, आप कैसे हैं?
+🔮 Future Improvements
+Text-to-speech button with language-aware voices
+Translation history
+Dark mode
+User accounts
+More translation providers
+File/document translation
+Deploy on Render, Railway or PythonAnywhere
+⚠️ Note
+deep-translator accesses online translation services, so an internet connection is required. Availability and behavior of third-party translation services can change.
+👩‍💻 Author
+Jigyasa Kumbhare
+B.Tech CSE-AIML Student
+📄 License
+This project is intended for educational and internship purposes. Add an MIT license if you decide to distribute it as open-source.
