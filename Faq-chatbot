@@ -1,0 +1,664 @@
+import json
+import re
+import nltk
+import streamlit as st
+
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+
+# -----------------------------
+# NLTK Setup
+# -----------------------------
+@st.cache_resource
+def setup_nltk():
+    resources = [
+        ("corpora/stopwords", "stopwords"),
+        ("corpora/wordnet", "wordnet"),
+        ("tokenizers/punkt", "punkt"),
+    ]
+
+    for path, resource in resources:
+        try:
+            nltk.data.find(path)
+        except LookupError:
+            nltk.download(resource, quiet=True)
+
+    return WordNetLemmatizer(), set(stopwords.words("english"))
+
+
+lemmatizer, stop_words = setup_nltk()
+
+
+# -----------------------------
+# Page Configuration
+# -----------------------------
+st.set_page_config(
+    page_title="FAQ Assistant",
+    page_icon="🤖",
+    layout="centered"
+)
+
+
+# -----------------------------
+# Custom CSS
+# -----------------------------
+st.markdown("""
+<style>
+
+.stApp {
+    background: linear-gradient(135deg, #eef2ff, #f8fafc);
+}
+
+.main-title {
+    text-align: center;
+    font-size: 42px;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
+
+.subtitle {
+    text-align: center;
+    color: #64748b;
+    font-size: 17px;
+    margin-bottom: 30px;
+}
+
+.chat-card {
+    background: white;
+    padding: 20px;
+    border-radius: 18px;
+    margin: 10px 0;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+}
+
+.user-message {
+    background: #e0e7ff;
+    padding: 14px 18px;
+    border-radius: 16px 16px 4px 16px;
+    margin: 8px 0;
+}
+
+.bot-message {
+    background: #f1f5f9;
+    padding: 14px 18px;
+    border-radius: 16px 16px 16px 4px;
+    margin: 8px 0;
+}
+
+.info-box {
+    background: white;
+    padding: 18px;
+    border-radius: 15px;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.06);
+}
+
+.footer {
+    text-align: center;
+    color: #64748b;
+    margin-top: 30px;
+    font-size: 14px;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# -----------------------------
+# Load FAQ Data
+# -----------------------------
+@st.cache_data
+def load_faqs():
+    with open("faqs.json", "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+faqs = load_faqs()
+
+
+# -----------------------------
+# Text Preprocessing
+# -----------------------------
+def preprocess_text(text):
+    text = text.lower()
+    text = re.sub(r"[^a-zA-Z\s]", "", text)
+
+    words = text.split()
+
+    words = [
+        lemmatizer.lemmatize(word)
+        for word in words
+        if word not in stop_words
+    ]
+
+    return " ".join(words)
+
+
+# -----------------------------
+# Prepare FAQ Questions
+# -----------------------------
+questions = [faq["question"] for faq in faqs]
+
+processed_questions = [
+    preprocess_text(question)
+    for question in questions
+]
+
+
+# -----------------------------
+# TF-IDF Model
+# -----------------------------
+vectorizer = TfidfVectorizer(
+    ngram_range=(1, 2)
+)
+
+faq_vectors = vectorizer.fit_transform(processed_questions)
+
+
+# -----------------------------
+# Find Best Answer
+# -----------------------------
+def get_answer(user_question):
+
+    processed_query = preprocess_text(user_question)
+
+    if not processed_query.strip():
+        return (
+            "Please enter a question so I can help you. 😊",
+            0,
+            None
+        )
+
+    query_vector = vectorizer.transform([processed_query])
+
+    similarities = cosine_similarity(
+        query_vector,
+        faq_vectors
+    )[0]
+
+    best_index = similarities.argmax()
+    best_score = similarities[best_index]
+
+    # Confidence threshold
+    if best_score < 0.20:
+        return (
+            "I'm sorry, I couldn't find a suitable answer to that question. "
+            "Please try asking about orders, payments, shipping, returns, "
+            "accounts, or customer support.",
+            best_score,
+            None
+        )
+
+    return (
+        faqs[best_index]["answer"],
+        best_score,
+        faqs[best_index]["question"]
+    )
+
+
+# -----------------------------
+# Header
+# -----------------------------
+st.markdown(
+    '<div class="main-title">🤖 FAQ Assistant</div>',
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    '<div class="subtitle">'
+    'Ask me anything about our products, orders, payments and support.'
+    '</div>',
+    unsafe_allow_html=True
+)
+
+
+# -----------------------------
+# Sidebar
+# -----------------------------
+with st.sidebar:
+
+    st.header("⚙️ Chatbot Information")
+
+    st.write(
+        "This chatbot uses Natural Language Processing "
+        "to match your question with the most relevant FAQ."
+    )
+
+    st.divider()
+
+    st.subheader("🧠 Technologies")
+
+    st.write("• Python")
+    st.write("• NLTK")
+    st.write("• TF-IDF")
+    st.write("• Cosine Similarity")
+    st.write("• Scikit-learn")
+    st.write("• Streamlit")
+
+    st.divider()
+
+    if st.button("🗑️ Clear Chat", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+
+
+# -----------------------------
+# Initialize Chat
+# -----------------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+
+# -----------------------------
+# Suggested Questions
+# -----------------------------
+st.markdown("### 💡 Try asking")
+
+suggestions = [
+    "What are your working hours?",
+    "How can I track my order?",
+    "What is your return policy?",
+    "How can I contact support?"
+]
+
+cols = st.columns(2)
+
+for i, question in enumerate(suggestions):
+
+    with cols[i % 2]:
+
+        if st.button(
+            question,
+            key=f"suggestion_{i}",
+            use_container_width=True
+        ):
+
+            answer, score, matched = get_answer(question)
+
+            st.session_state.messages.append(
+                {
+                    "role": "user",
+                    "content": question
+                }
+            )
+
+            st.session_state.messages.append(
+                {
+                    "role": "bot",
+                    "content": answer
+                }
+            )
+
+            st.rerun()
+
+
+st.divider()
+
+
+# -----------------------------
+# Display Chat History
+# -----------------------------
+for message in st.session_state.messages:
+
+    if message["role"] == "user":
+
+        st.markdown(
+            f"""
+            <div class="user-message">
+                <b>👤 You</b><br>
+                {message["content"]}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    else:
+
+        st.markdown(
+            f"""
+            <div class="bot-message">
+                <b>🤖 FAQ Assistant</b><br>
+                {message["content"]}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+# -----------------------------
+# Chat Input
+# -----------------------------
+user_question = st.chat_input(
+    "Type your question here..."
+)
+
+
+if user_question:
+
+    answer, score, matched_question = get_answer(
+        user_question
+    )
+
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": user_question
+        }
+    )
+
+    st.session_state.messages.append(
+        {
+            "role": "bot",
+            "content": answer
+        }
+    )
+
+    st.rerun()
+
+
+# -----------------------------
+# Footer
+# -----------------------------
+st.markdown(
+    """
+    <div class="footer">
+        Built with ❤️ using Python, NLTK, Scikit-learn and Streamlit
+        <br>
+        NLP FAQ Chatbot Project
+    </div>
+    """,
+    unsafe_allow_html=True
+)[
+    {
+        "question": "What are your working hours?",
+        "answer": "Our customer support is available from 9:00 AM to 6:00 PM, Monday to Saturday."
+    },
+    {
+        "question": "How can I contact customer support?",
+        "answer": "You can contact our customer support team through email or the support section of our website."
+    },
+    {
+        "question": "How can I track my order?",
+        "answer": "You can track your order by visiting the Orders section and entering your order ID."
+    },
+    {
+        "question": "How long does delivery take?",
+        "answer": "Standard delivery usually takes 3 to 7 business days depending on your location."
+    },
+    {
+        "question": "What is your return policy?",
+        "answer": "Products can generally be returned within 7 days of delivery if they meet our return conditions."
+    },
+    {
+        "question": "How can I cancel my order?",
+        "answer": "You can request cancellation from the Orders section before the order has been shipped."
+    },
+    {
+        "question": "What payment methods do you accept?",
+        "answer": "We accept major debit cards, credit cards, UPI, net banking and other supported online payment methods."
+    },
+    {
+        "question": "Is cash on delivery available?",
+        "answer": "Cash on Delivery may be available for selected products and locations."
+    },
+    {
+        "question": "How do I reset my password?",
+        "answer": "Click on the Forgot Password option on the login page and follow the instructions to reset your password."
+    },
+    {
+        "question": "How do I create an account?",
+        "answer": "Click the Sign Up or Create Account option and provide the required information."
+    },
+    {
+        "question": "What should I do if my order is damaged?",
+        "answer": "Please contact customer support as soon as possible and provide your order details and photographs of the damaged product."
+    },
+    {
+        "question": "Can I change my delivery address?",
+        "answer": "You may be able to change your delivery address before your order is shipped. Contact support for assistance."
+    },
+    {
+        "question": "Do you offer refunds?",
+        "answer": "Yes, eligible returned or cancelled orders may receive a refund according to our refund policy."
+    },
+    {
+        "question": "How long does a refund take?",
+        "answer": "Refund processing usually takes a few business days after the return or cancellation has been approved."
+    },
+    {
+        "question": "Do you provide customer support on Sunday?",
+        "answer": "Customer support is generally unavailable on Sunday. Regular support hours are Monday to Saturday."
+    },
+    {
+        "question": "Where can I find my order ID?",
+        "answer": "Your order ID can usually be found in your order confirmation email or in the Orders section of your account."
+    },
+    {
+        "question": "Can I modify my order?",
+        "answer": "Order modifications may be possible before shipping. Please contact customer support as soon as possible."
+    },
+    {
+        "question": "What if I forgot my account password?",
+        "answer": "Use the Forgot Password option on the login page to receive instructions for creating a new password."
+    },
+    {
+        "question": "How can I know if my order has shipped?",
+        "answer": "You will receive a shipping notification when your order has been dispatched."
+    },
+    {
+        "question": "How do I report a problem with my order?",
+        "answer": "Contact customer support with your order ID and a description of the problem so our team can assist you."
+    }
+]🤖 FAQ Chatbot using NLP
+
+An intelligent and interactive FAQ Chatbot built using Python, Natural Language Processing (NLP), NLTK, TF-IDF, Cosine Similarity and Streamlit.
+
+The chatbot understands a user's question and finds the most relevant answer from a predefined collection of Frequently Asked Questions.
+
+---
+
+📌 Project Overview
+
+The goal of this project is to create a simple NLP-based chatbot that can automatically answer frequently asked questions.
+
+Instead of using a large language model or paid API, this project uses TF-IDF and Cosine Similarity to compare the user's question with stored FAQ questions.
+
+How it works
+
+User Question
+      ↓
+Text Preprocessing
+      ↓
+Tokenization / Cleaning
+      ↓
+Lemmatization
+      ↓
+TF-IDF Vectorization
+      ↓
+Cosine Similarity
+      ↓
+Best Matching FAQ
+      ↓
+Chatbot Response
+
+---
+
+✨ Features
+
+- 🤖 Interactive chatbot
+- 💬 Modern Streamlit chat interface
+- 🧠 Natural Language Processing
+- 🔎 FAQ question matching
+- 📊 TF-IDF vectorization
+- 📐 Cosine similarity
+- 🧹 Text preprocessing
+- 📚 JSON-based FAQ database
+- 💡 Suggested questions
+- 🗑️ Clear chat functionality
+- 📱 Responsive interface
+- 🚫 Handles unknown questions
+
+---
+
+🛠️ Technologies Used
+
+- Python
+- NLTK
+- Scikit-learn
+- Streamlit
+- JSON
+
+---
+
+📂 Project Structure
+
+faq-chatbot/
+│
+├── app.py
+├── faqs.json
+├── requirements.txt
+├── README.md
+│
+└── screenshots/
+    ├── home.png
+    └── chatbot.png
+
+---
+
+🧠 NLP Techniques
+
+1. Text Cleaning
+
+The chatbot converts text to lowercase and removes unnecessary characters.
+
+2. Stopword Removal
+
+Common English words that provide little information are removed using NLTK.
+
+3. Lemmatization
+
+Words are converted into their base form.
+
+For example:
+
+running → run
+questions → question
+
+4. TF-IDF
+
+TF-IDF converts FAQ questions into numerical vectors based on the importance of words.
+
+5. Cosine Similarity
+
+Cosine similarity compares the user's question with all stored FAQ questions and identifies the closest match.
+
+---
+
+🚀 Installation
+
+Step 1: Clone the repository
+
+git clone https://github.com/YOUR-USERNAME/faq-chatbot.git
+
+Step 2: Open the project
+
+cd faq-chatbot
+
+Step 3: Install dependencies
+
+pip install -r requirements.txt
+
+Step 4: Run the application
+
+streamlit run app.py
+
+The application will open in your browser.
+
+---
+
+💻 Example Questions
+
+Try questions such as:
+
+What are your working hours?
+
+How can I track my order?
+
+What is your return policy?
+
+How can I contact customer support?
+
+How do I reset my password?
+
+Do you offer refunds?
+
+How long does delivery take?
+
+---
+
+📸 Screenshots
+
+Home Screen
+
+Add your screenshot here:
+
+![Home Screen](screenshots/home.png)
+
+Chatbot Conversation
+
+Add your chatbot screenshot here:
+
+![Chatbot Conversation](screenshots/chatbot.png)
+
+---
+
+📈 Future Improvements
+
+The project can be further improved by adding:
+
+- Voice input
+- Speech-to-text
+- Multiple languages
+- Larger FAQ database
+- Database integration
+- Admin panel
+- User authentication
+- Chat history
+- Intent classification
+- Transformer-based NLP
+- Integration with an AI API
+
+---
+
+🎯 Learning Outcomes
+
+Through this project, I learned:
+
+- Basics of Natural Language Processing
+- Text preprocessing
+- Stopword removal
+- Lemmatization
+- TF-IDF vectorization
+- Cosine similarity
+- Building interactive Python applications
+- Creating chatbot interfaces
+- Managing datasets using JSON
+- Deploying Streamlit applications
+
+---
+
+👩‍💻 Author
+
+Jigyasa Kumbhare
+
+B.Tech CSE-AIML Student
+
+Skills: Python | Java | Machine Learning | NLP | Data Structures & Algorithms
+
+---
+
+⭐ If you found this project useful
+
+Give this repository a ⭐ on GitHub!
