@@ -1,0 +1,204 @@
+import os
+import pickle
+import numpy as np
+from music21 import converter, note, chord
+
+DATASET = "dataset/midi"
+SEQUENCE_LENGTH = 50
+
+notes = []
+
+for file in os.listdir(DATASET):
+    if file.endswith(".mid") or file.endswith(".midi"):
+        try:
+            midi = converter.parse(os.path.join(DATASET, file))
+
+            for element in midi.flatten().notes:
+                if isinstance(element, note.Note):
+                    notes.append(str(element.pitch))
+
+                elif isinstance(element, chord.Chord):
+                    notes.append(".".join(str(n) for n in element.normalOrder))
+
+        except Exception as e:
+            print("Error:", e)
+
+print("Total notes:", len(notes))
+
+if len(notes) <= SEQUENCE_LENGTH:
+    raise ValueError("Add more MIDI files to dataset/midi")
+
+unique_notes = sorted(set(notes))
+note_to_int = {n: i for i, n in enumerate(unique_notes)}
+
+X = []
+y = []
+
+for i in range(len(notes) - SEQUENCE_LENGTH):
+    sequence = notes[i:i + SEQUENCE_LENGTH]
+    target = notes[i + SEQUENCE_LENGTH]
+
+    X.append([note_to_int[n] for n in sequence])
+    y.append(note_to_int[target])
+
+X = np.array(X)
+y = np.array(y)
+
+os.makedirs("model", exist_ok=True)
+
+np.save("model/X.npy", X)
+np.save("model/y.npy", y)
+
+with open("model/notes.pkl", "wb") as f:
+    pickle.dump(unique_notes, f)
+
+print("Preprocessing completed!")
+print("Training samples:", len(X))
+print("Vocabulary:", len(unique_notes))import numpy as np
+import pickle
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+
+X = np.load("model/X.npy")
+y = np.load("model/y.npy")
+
+with open("model/notes.pkl", "rb") as f:
+    notes = pickle.load(f)
+
+vocab_size = len(notes)
+
+X = X / float(vocab_size)
+
+model = Sequential([
+    LSTM(256, input_shape=(X.shape[1], 1), return_sequences=True),
+    Dropout(0.3),
+
+    LSTM(256),
+    Dropout(0.3),
+
+    Dense(128, activation="relu"),
+    Dense(vocab_size, activation="softmax")
+])
+
+model.compile(
+    loss="sparse_categorical_crossentropy",
+    optimizer="adam"
+)
+
+model.fit(
+    X,
+    y,
+    epochs=30,
+    batch_size=64
+)
+
+model.save("model/music_model.h5")
+
+print("Model trained successfully!")import numpy as np
+import pickle
+import random
+from tensorflow.keras.models import load_model
+from music21 import stream, note, chord
+
+model = load_model("model/music_model.h5")
+
+with open("model/notes.pkl", "rb") as f:
+    notes = pickle.load(f)
+
+vocab_size = len(notes)
+
+sequence_length = 50
+
+pattern = [random.randint(0, vocab_size - 1)
+           for _ in range(sequence_length)]
+
+generated = []
+
+for i in range(100):
+
+    input_data = np.array(pattern)
+    input_data = input_data.reshape(1, sequence_length, 1)
+    input_data = input_data / float(vocab_size)
+
+    prediction = model.predict(input_data, verbose=0)
+
+    index = np.argmax(prediction)
+
+    generated.append(notes[index])
+
+    pattern.append(index)
+    pattern = pattern[1:]
+
+output = stream.Stream()
+
+for item in generated:
+
+    if "." in item:
+        numbers = item.split(".")
+
+        notes_in_chord = [
+            note.Note(int(n)) for n in numbers
+        ]
+
+        new_chord = chord.Chord(notes_in_chord)
+        output.append(new_chord)
+
+    else:
+        new_note = note.Note(item)
+        output.append(new_note)
+
+output.write(
+    "midi",
+    fp="generated_music.mid"
+)
+
+print("🎵 Music generated successfully!")
+print("Saved as generated_music.mid")import streamlit as st
+import subprocess
+import os
+
+st.set_page_config(
+    page_title="AI Music Generator",
+    page_icon="🎵"
+)
+
+st.title("🎵 AI Music Generator")
+
+st.write(
+    "Generate original MIDI music using an LSTM neural network."
+)
+
+if st.button("🎶 Generate Music"):
+
+    if not os.path.exists("model/music_model.h5"):
+        st.error("Please train the model first using train.py")
+    else:
+
+        with st.spinner("Generating music..."):
+
+            subprocess.run(
+                ["python", "generate.py"]
+            )
+
+        st.success("Music generated successfully! 🎉")
+
+        with open("generated_music.mid", "rb") as file:
+
+            st.download_button(
+                label="⬇️ Download MIDI",
+                data=file,
+                file_name="AI_Generated_Music.mid",
+                mime="audio/midi"
+            )
+
+st.markdown("---")
+
+st.write("### How it works")
+
+st.write("""
+1. MIDI files are collected.
+2. music21 extracts notes and chords.
+3. LSTM learns musical patterns.
+4. The model predicts new notes.
+5. New notes are converted into a MIDI file.
+""")
